@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Typing Trainer - PDF Reader</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <style>
         body {
             background-color: #1e1e2e;
@@ -22,6 +26,7 @@
             align-items: center;
             margin-bottom: 20px;
             gap: 15px;
+            flex-wrap: wrap;
         }
         button {
             background-color: #89b4fa;
@@ -33,9 +38,7 @@
             border-radius: 4px;
             cursor: pointer;
         }
-        button:hover {
-            opacity: 0.9;
-        }
+        button:hover { opacity: 0.9; }
         #btn-next {
             background-color: #45475a;
             color: #7f849c;
@@ -44,10 +47,7 @@
             background-color: #a6e3a1;
             color: #11111b;
         }
-        .stats {
-            font-weight: bold;
-            color: #a6e3a1;
-        }
+        .stats { font-weight: bold; color: #a6e3a1; }
         #typing-container {
             flex: 1;
             background-color: #1e1e2e;
@@ -69,7 +69,8 @@
 <body>
 
     <header>
-        <button id="btn-load">Load / Resume PDF</button>
+        <button id="btn-load">📂 Load PDF Book</button>
+        <input type="file" id="file-input" accept=".pdf" style="display: none;">
         <button id="btn-next" disabled>Next ➔</button>
         <span id="lbl-info">No book loaded</span>
         <span class="stats" id="lbl-stats">WPM: 0.0 | Accuracy: 0.0%</span>
@@ -78,13 +79,16 @@
     <div id="typing-container" tabindex="0"></div>
 
     <script>
-        // Frontend logic for mouse placement, 80% threshold Next button, and English messages
         const container = document.getElementById('typing-container');
         const btnLoad = document.getElementById('btn-load');
+        const fileInput = document.getElementById('file-input');
         const btnNext = document.getElementById('btn-next');
         const lblInfo = document.getElementById('lbl-info');
         const lblStats = document.getElementById('lbl-stats');
 
+        let bookTitle = "";
+        let blocks = [];
+        let currentBlockIndex = 0;
         let currentText = "";
         let currentIndex = 0;
         let totalKeystrokes = 0;
@@ -92,15 +96,96 @@
         let startTime = null;
         let errorAtCursor = false;
 
-        btnLoad.addEventListener('click', () => {
-            alert("To load PDF files, please use the Python desktop version (main.py).");
+        window.addEventListener('load', () => {
+            const savedSession = localStorage.getItem('typing_trainer_session');
+            if (savedSession) {
+                try {
+                    const data = JSON.parse(savedSession);
+                    bookTitle = data.bookTitle;
+                    blocks = data.blocks;
+                    currentBlockIndex = data.currentBlockIndex;
+                    loadBlock();
+                } catch (e) {
+                    console.error("Error loading saved session", e);
+                }
+            }
         });
+
+        function saveSession() {
+            if (!bookTitle) return;
+            localStorage.setItem('typing_trainer_session', JSON.stringify({ bookTitle, blocks, currentBlockIndex }));
+        }
+
+        btnLoad.addEventListener('click', () => { fileInput.click(); });
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            bookTitle = file.name.replace(/\.[^/.]+$/, "");
+            lblInfo.textContent = "Processing PDF...";
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = "";
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(" ") + " ";
+                }
+
+                const cleaned = fullText.replace(/[^a-zA-Z0-9\s.,!?\'"-]/g, ' ').replace(/\s+/g, ' ').trim();
+                const words = cleaned.split(' ');
+                blocks = [];
+                const chunkSize = 100;
+                
+                for (let i = 0; i < words.length; i += chunkSize) {
+                    const chunk = words.slice(i, i + chunkSize).join(' ');
+                    if (chunk.length > 10) blocks.push(chunk);
+                }
+
+                if (blocks.length === 0) {
+                    alert("Could not extract legible text from this PDF.");
+                    return;
+                }
+
+                currentBlockIndex = 0;
+                saveSession();
+                loadBlock();
+            } catch (err) {
+                console.error(err);
+                alert("Error reading local PDF file.");
+            }
+        });
+
+        function loadBlock() {
+            if (currentBlockIndex >= blocks.length) {
+                lblInfo.textContent = "Book completed!";
+                currentText = "You have finished the entire book!";
+                renderText();
+                btnNext.setAttribute('disabled', 'true');
+                return;
+            }
+
+            currentText = blocks[currentBlockIndex];
+            currentIndex = 0;
+            totalKeystrokes = 0;
+            correctKeystrokes = 0;
+            startTime = null;
+            errorAtCursor = false;
+
+            lblInfo.textContent = `Book: ${bookTitle} | Block ${currentBlockIndex + 1}/${blocks.length}`;
+            renderText();
+            btnNext.setAttribute('disabled', 'true');
+            container.focus();
+        }
 
         btnNext.addEventListener('click', () => {
-            alert("Moving to next block...");
+            currentBlockIndex++;
+            saveSession();
+            loadBlock();
         });
 
-        // Allow clicking to move typing cursor
         container.addEventListener('click', (e) => {
             const range = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
             if (range && currentText) {
@@ -119,9 +204,7 @@
             if (!currentText || currentIndex >= currentText.length) return;
             if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
 
-            if (!startTime) {
-                startTime = Date.now();
-            }
+            if (!startTime) startTime = Date.now();
 
             totalKeystrokes++;
             const expected = currentText[currentIndex];
@@ -139,7 +222,7 @@
             updateStats();
 
             if (currentIndex >= currentText.length) {
-                lblInfo.textContent = "Block completed!";
+                lblInfo.textContent = "Block completed! Click Next.";
             }
         });
 
@@ -150,8 +233,7 @@
                 if (i < currentIndex) {
                     html += `<span class="correct">${char}</span>`;
                 } else if (i === currentIndex) {
-                    const cls = errorAtCursor ? "error" : "current";
-                    html += `<span class="${cls}">${char}</span>`;
+                    html += `<span class="${errorAtCursor ? 'error' : 'current'}">${char}</span>`;
                 } else {
                     html += `<span class="pending">${char}</span>`;
                 }
@@ -177,8 +259,7 @@
             lblStats.textContent = `WPM: ${wpm.toFixed(1)} | Accuracy: ${accuracy.toFixed(1)}%`;
         }
 
-        // Example initial text for testing interface
-        currentText = "Welcome to the typing trainer application. Practice your speed and accuracy here.";
+        currentText = "Upload a PDF book using the top button to start practicing.";
         renderText();
         container.focus();
     </script>
