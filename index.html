@@ -87,6 +87,7 @@
         const lblInfo = document.getElementById('lbl-info');
         const lblStats = document.getElementById('lbl-stats');
 
+        let bookKey = "";
         let bookTitle = "";
         let blocks = [];
         let currentBlockIndex = 0;
@@ -97,32 +98,14 @@
         let startTime = null;
         let errorAtCursor = false;
 
-        window.addEventListener('load', () => {
-            const savedSession = localStorage.getItem('typing_trainer_session');
-            if (savedSession) {
-                try {
-                    const data = JSON.parse(savedSession);
-                    bookTitle = data.bookTitle;
-                    blocks = data.blocks;
-                    currentBlockIndex = data.currentBlockIndex;
-                    loadBlock();
-                } catch (e) {
-                    console.error("Error loading saved session", e);
-                }
-            }
-        });
-
-        function saveSession() {
-            if (!bookTitle) return;
-            localStorage.setItem('typing_trainer_session', JSON.stringify({ bookTitle, blocks, currentBlockIndex }));
-        }
-
         btnLoad.addEventListener('click', () => { fileInput.click(); });
 
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             bookTitle = file.name.replace(/\.[^/.]+$/, "");
+            bookKey = "typing_trainer_" + bookTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            
             lblInfo.textContent = "Processing PDF...";
             try {
                 const arrayBuffer = await file.arrayBuffer();
@@ -150,7 +133,23 @@
                     return;
                 }
 
-                currentBlockIndex = 0;
+                // Verificar si ya existe progreso guardado para este libro específico
+                const saved = localStorage.getItem(bookKey);
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        if (data.blocks && data.blocks.length === blocks.length) {
+                            currentBlockIndex = data.currentBlockIndex || 0;
+                        } else {
+                            currentBlockIndex = 0;
+                        }
+                    } catch (err) {
+                        currentBlockIndex = 0;
+                    }
+                } else {
+                    currentBlockIndex = 0;
+                }
+
                 saveSession();
                 loadBlock();
             } catch (err) {
@@ -158,6 +157,16 @@
                 alert("Error reading local PDF file.");
             }
         });
+
+        function saveSession() {
+            if (!bookKey) return;
+            const data = {
+                bookTitle,
+                blocks,
+                currentBlockIndex
+            };
+            localStorage.setItem(bookKey, JSON.stringify(data));
+        }
 
         function loadBlock() {
             if (currentBlockIndex >= blocks.length) {
