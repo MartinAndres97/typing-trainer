@@ -35,21 +35,11 @@ class Book:
         return len(self.blocks)
 
 # --- 2. PROCESADOR Y LIMPIADOR DE PDF ---
-
-    # Limpieza automática de caché JSON al abrir el libro para evitar datos viejos
-    import os, glob
-    for f in glob.glob('*_progress.json') + glob.glob('data/*_progress.json') + glob.glob('*.local/share/typing_trainer/*_progress.json'):
-        try:
-            os.remove(f)
-        except:
-            pass
-
 def extract_pages(path):
     import pypdf
     import re
     import os, glob
     
-    # Limpieza automática de caché
     for f in glob.glob('*_progress.json') + glob.glob('data/*_progress.json') + glob.glob(os.path.expanduser('~/.local/share/typing_trainer/*_progress.json')):
         try:
             os.remove(f)
@@ -75,18 +65,17 @@ def extract_pages(path):
     if not text_pages:
         text_pages = ["No se pudo extraer texto legible del PDF."]
     return text_pages
+
 def guess_title(pdf_path: str) -> str:
     return os.path.splitext(os.path.basename(pdf_path))[0]
 
 def clean_book(raw_pages: list[str]) -> list[Block]:
     blocks = []
     for page_num, text in enumerate(raw_pages, start=1):
-        # Normalizar comillas tipográficas a estándar
         text = text.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
         cleaned = re.sub(r'\s+', ' ', text).strip()
         if not cleaned:
             continue
-        # Dividir en bloques de ~100 palabras
         words = cleaned.split()
         chunk_size = 100
         for i in range(0, len(words), chunk_size):
@@ -199,6 +188,7 @@ def _fmt(fg: str, bg: str | None = None):
 class TypingWidget(QTextEdit):
     key_processed = pyqtSignal()
     block_finished = pyqtSignal()
+    progress_updated = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -223,6 +213,19 @@ class TypingWidget(QTextEdit):
         self.engine = TypingEngine(text)
         self.setPlainText(text)
         self._paint_all_pending()
+        self.progress_updated.emit(0.0)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if self.engine and not self.engine.finished:
+            cursor = self.cursorForPosition(event.pos())
+            clicked_pos = cursor.position()
+            if clicked_pos <= len(self.engine.text):
+                self.engine.pos = clicked_pos
+                self._paint_all_pending()
+                progress = (self.engine.pos / len(self.engine.text)) * 100.0
+                self.progress_updated.emit(progress)
+        self.setFocus()
 
     def keyPressEvent(self, event: QKeyEvent):
         if self.engine is None:
@@ -243,6 +246,9 @@ class TypingWidget(QTextEdit):
             self._paint(pos_before, pos_before + 1, self._fmt_correct)
         self._paint_current()
         self._scroll_to_current()
+
+        progress = (self.engine.pos / len(self.engine.text)) * 100.0
+        self.progress_updated.emit(progress)
 
         self.key_processed.emit()
         if result == DONE:
@@ -295,6 +301,25 @@ class MainWindow(QMainWindow):
         self.btn_load.setStyleSheet("background: #89b4fa; color: #11111b; padding: 10px; font-weight: bold; font-size: 14px;")
         self.btn_load.clicked.connect(self.select_and_load_pdf)
         
+        self.btn_next = QPushButton("Next ➔")
+        # Estilos dinámicos para el botón Next (deshabilitado vs habilitado con color brillante)
+        self.btn_next.setStyleSheet("""
+            QPushButton {
+                background: #45475a; 
+                color: #7f849c; 
+                padding: 10px; 
+                font-weight: bold; 
+                font-size: 14px;
+                border-radius: 4px;
+            }
+            QPushButton:enabled {
+                background: #a6e3a1; 
+                color: #11111b;
+            }
+        """)
+        self.btn_next.setEnabled(False)
+        self.btn_next.clicked.connect(self.on_next_clicked)
+
         self.lbl_info = QLabel("Ningún libro cargado")
         self.lbl_info.setStyleSheet("font-size: 14px;")
         
@@ -302,6 +327,7 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setStyleSheet("font-size: 14px; font-weight: bold; color: #a6e3a1;")
 
         top_bar.addWidget(self.btn_load)
+        top_bar.addWidget(self.btn_next)
         top_bar.addWidget(self.lbl_info, stretch=1)
         top_bar.addWidget(self.lbl_stats)
 
@@ -311,6 +337,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.typing, stretch=1)
 
         self.typing.block_finished.connect(self.on_block_finished)
+        self.typing.progress_updated.connect(self.check_progress_threshold)
         
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_live_stats)
@@ -347,12 +374,26 @@ class MainWindow(QMainWindow):
         if self.current_block_index >= self.book.total_blocks:
             self.lbl_info.setText("¡Felicidades! Libro completado.")
             self.typing.setPlainText("¡Has terminado el libro completo!")
+            self.btn_next.setEnabled(False)
             return
 
         block = self.book.blocks[self.current_block_index]
         self.typing.load_text(block.text)
         self.lbl_info.setText(f"Libro: {self.book.title} | Bloque {self.current_block_index + 1}/{self.book.total_blocks}")
+        self.btn_next.setEnabled(False)
         self.typing.setFocus()
+
+    def check_progress_threshold(self, progress: float):
+        if progress >= 80.0:
+            self.btn_next.setEnabled(True)
+        else:
+            self.btn_next.setEnabled(False)
+
+    def on_next_clicked(self):
+        self.current_block_index += 1
+        if self.book:
+            save_session(self.book, self.current_block_index)
+        self.load_current_block()
 
     def on_block_finished(self):
         self.current_block_index += 1
