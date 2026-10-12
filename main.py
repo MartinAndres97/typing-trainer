@@ -13,7 +13,7 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFontDatabase, QKeyEvent, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import QTextEdit
 
-# --- 1. MODELOS ---
+# --- 1. MODELS ---
 @dataclass
 class Block:
     index: int
@@ -34,7 +34,7 @@ class Book:
     def total_blocks(self) -> int:
         return len(self.blocks)
 
-# --- 2. PROCESADOR Y LIMPIADOR DE PDF ---
+# --- 2. PDF PROCESSOR & CLEANER ---
 def extract_pages(path):
     import pypdf
     import re
@@ -60,10 +60,10 @@ def extract_pages(path):
             except:
                 continue
     except Exception as e:
-        print(f"Error leyendo PDF: {e}")
+        print(f"Error reading PDF: {e}")
     
     if not text_pages:
-        text_pages = ["No se pudo extraer texto legible del PDF."]
+        text_pages = ["Could not extract legible text from the PDF."]
     return text_pages
 
 def guess_title(pdf_path: str) -> str:
@@ -83,7 +83,7 @@ def clean_book(raw_pages: list[str]) -> list[Block]:
             blocks.append(Block(index=len(blocks), page_number=page_num, text=chunk))
     return blocks
 
-# --- 3. MOTOR DE TIPEO ---
+# --- 3. TYPING ENGINE ---
 CORRECT = "correct"
 WRONG = "wrong"
 DONE = "done"
@@ -152,7 +152,7 @@ class TypingEngine:
     def words_done(self) -> int:
         return bisect_right(self._word_ends, self.pos)
 
-# --- 4. GESTOR DE GUARDADO ---
+# --- 4. SESSION MANAGER ---
 DATA_DIR = "data"
 
 def save_session(book: Book, current_block: int):
@@ -177,7 +177,7 @@ def load_session(pdf_path: str):
     book = Book(title=data["title"], source_path=data["source_path"], blocks=blocks)
     return book, data.get("current_block", 0)
 
-# --- 5. WIDGET DE INTERFAZ ---
+# --- 5. UI WIDGET ---
 def _fmt(fg: str, bg: str | None = None):
     fmt = QTextCharFormat()
     fmt.setForeground(QBrush(QColor(fg)))
@@ -281,7 +281,7 @@ class TypingWidget(QTextEdit):
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
 
-# --- 6. VENTANA PRINCIPAL ---
+# --- 6. MAIN WINDOW ---
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -297,12 +297,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
 
         top_bar = QHBoxLayout()
-        self.btn_load = QPushButton("Cargar / Reanudar PDF")
+        self.btn_load = QPushButton("Load / Resume PDF")
         self.btn_load.setStyleSheet("background: #89b4fa; color: #11111b; padding: 10px; font-weight: bold; font-size: 14px;")
         self.btn_load.clicked.connect(self.select_and_load_pdf)
         
         self.btn_next = QPushButton("Next ➔")
-        # Estilos dinámicos para el botón Next (deshabilitado vs habilitado con color brillante)
         self.btn_next.setStyleSheet("""
             QPushButton {
                 background: #45475a; 
@@ -320,10 +319,10 @@ class MainWindow(QMainWindow):
         self.btn_next.setEnabled(False)
         self.btn_next.clicked.connect(self.on_next_clicked)
 
-        self.lbl_info = QLabel("Ningún libro cargado")
+        self.lbl_info = QLabel("No book loaded")
         self.lbl_info.setStyleSheet("font-size: 14px;")
         
-        self.lbl_stats = QLabel("WPM: 0.0 | Precisión: 0.0%")
+        self.lbl_stats = QLabel("WPM: 0.0 | Accuracy: 0.0%")
         self.lbl_stats.setStyleSheet("font-size: 14px; font-weight: bold; color: #a6e3a1;")
 
         top_bar.addWidget(self.btn_load)
@@ -344,26 +343,26 @@ class MainWindow(QMainWindow):
         self.timer.start(200)
 
     def select_and_load_pdf(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Seleccionar PDF", "", "Archivos PDF (*.pdf)")
+        path, _ = QFileDialog.getOpenFileName(self, "Select PDF", "", "PDF Files (*.pdf)")
         if not path:
             return
 
         saved = load_session(path)
         if saved:
             self.book, self.current_block_index = saved
-            self.lbl_info.setText(f"Reanudando: {self.book.title}")
+            self.lbl_info.setText(f"Resuming: {self.book.title}")
         else:
             try:
                 raw_pages = extract_pages(path)
                 title = guess_title(path)
                 blocks = clean_book(raw_pages)
                 if not blocks:
-                    raise ValueError("No se pudo extraer texto.")
+                    raise ValueError("Could not extract text.")
                 self.book = Book(title=title, source_path=path, blocks=blocks)
                 self.current_block_index = 0
                 save_session(self.book, self.current_block_index)
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo cargar el PDF:\n{e}")
+                QMessageBox.critical(self, "Error", f"Failed to load PDF:\n{e}")
                 return
 
         self.load_current_block()
@@ -372,14 +371,14 @@ class MainWindow(QMainWindow):
         if not self.book:
             return
         if self.current_block_index >= self.book.total_blocks:
-            self.lbl_info.setText("¡Felicidades! Libro completado.")
-            self.typing.setPlainText("¡Has terminado el libro completo!")
+            self.lbl_info.setText("Congratulations! Book completed.")
+            self.typing.setPlainText("You have finished the entire book!")
             self.btn_next.setEnabled(False)
             return
 
         block = self.book.blocks[self.current_block_index]
         self.typing.load_text(block.text)
-        self.lbl_info.setText(f"Libro: {self.book.title} | Bloque {self.current_block_index + 1}/{self.book.total_blocks}")
+        self.lbl_info.setText(f"Book: {self.book.title} | Block {self.current_block_index + 1}/{self.book.total_blocks}")
         self.btn_next.setEnabled(False)
         self.typing.setFocus()
 
@@ -404,7 +403,7 @@ class MainWindow(QMainWindow):
     def update_live_stats(self):
         e = self.typing.engine
         if e:
-            self.lbl_stats.setText(f"WPM: {e.wpm():.1f} | Precisión: {e.accuracy:.1f}%")
+            self.lbl_stats.setText(f"WPM: {e.wpm():.1f} | Accuracy: {e.accuracy:.1f}%")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
