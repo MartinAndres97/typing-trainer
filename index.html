@@ -59,6 +59,7 @@
             word-break: break-word;
             overflow-y: auto;
             border: none;
+            cursor: text;
         }
         .pending { color: #7f849c; }
         .correct { color: #a6e3a1; }
@@ -187,15 +188,13 @@
         });
 
         container.addEventListener('click', (e) => {
-            const range = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
-            if (range && currentText) {
-                const pos = range.startOffset;
-                if (pos <= currentText.length) {
-                    currentIndex = pos;
-                    errorAtCursor = false;
-                    renderText();
-                    checkProgress();
-                }
+            if (!currentText) return;
+            const span = e.target.closest('span');
+            if (span && span.dataset.index !== undefined) {
+                currentIndex = parseInt(span.dataset.index, 10);
+                errorAtCursor = false;
+                renderText();
+                checkProgress();
             }
             container.focus();
         });
@@ -230,13 +229,13 @@
             let html = "";
             for (let i = 0; i < currentText.length; i++) {
                 const char = currentText[i] === ' ' ? '&nbsp;' : currentText[i];
+                let cls = "pending";
                 if (i < currentIndex) {
-                    html += `<span class="correct">${char}</span>`;
+                    cls = "correct";
                 } else if (i === currentIndex) {
-                    html += `<span class="${errorAtCursor ? 'error' : 'current'}">${char}</span>`;
-                } else {
-                    html += `<span class="pending">${char}</span>`;
+                    cls = errorAtCursor ? "error" : "current";
                 }
+                html += `<span data-index="${i}" class="${cls}">${char}</span>`;
             }
             container.innerHTML = html;
         }
