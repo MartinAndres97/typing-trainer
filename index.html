@@ -1,183 +1,186 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Typing Trainer Web</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<style>
-    body {
-        background-color: #1e1e2e;
-        color: #cdd6f4;
-        font-family: 'Courier New', Courier, monospace;
-        margin: 0;
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        box-sizing: border-box;
-    }
-    header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: #11111b;
-        padding: 15px 20px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-    }
-    button, label.upload-btn {
-        background: #89b4fa;
-        color: #11111b;
-        border: none;
-        padding: 10px 15px;
-        font-weight: bold;
-        font-size: 14px;
-        border-radius: 5px;
-        cursor: pointer;
-    }
-    button:hover, label.upload-btn:hover {
-        background: #b4befe;
-    }
-    input[type="file"] { display: none; }
-    .stats {
-        font-size: 16px;
-        font-weight: bold;
-        color: #a6e3a1;
-    }
-    #trainer-container {
-        flex: 1;
-        background: #11111b;
-        border-radius: 8px;
-        padding: 30px;
-        font-size: 24px;
-        line-height: 1.6;
-        outline: none;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-    }
-    .pending { color: #7f849c; }
-    .correct { color: #a6e3a1; }
-    .current { background: #45475a; color: #cdd6f4; }
-    .error { background: #f38ba8; color: #11111b; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typing Trainer - PDF Reader</title>
+    <style>
+        body {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            font-family: monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 15px;
+        }
+        button {
+            background-color: #89b4fa;
+            color: #11111b;
+            border: none;
+            padding: 10px 15px;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        #btn-next {
+            background-color: #45475a;
+            color: #7f849c;
+        }
+        #btn-next:enabled {
+            background-color: #a6e3a1;
+            color: #11111b;
+        }
+        .stats {
+            font-weight: bold;
+            color: #a6e3a1;
+        }
+        #typing-container {
+            flex: 1;
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            font-size: 20px;
+            padding: 32px;
+            outline: none;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-y: auto;
+            border: none;
+        }
+        .pending { color: #7f849c; }
+        .correct { color: #a6e3a1; }
+        .current { color: #cdd6f4; background-color: #45475a; }
+        .error { color: #11111b; background-color: #f38ba8; }
+    </style>
 </head>
 <body>
 
-<header>
-    <div>
-        <label class="upload-btn">
-            Cargar PDF <input type="file" id="pdf-upload" accept=".pdf">
-        </label>
-        <span id="info-text" style="margin-left: 15px;">Ningún libro cargado</span>
-    </div>
-    <div class="stats" id="stats-display">WPM: 0.0 | Precisión: 100%</div>
-</header>
+    <header>
+        <button id="btn-load">Load / Resume PDF</button>
+        <button id="btn-next" disabled>Next ➔</button>
+        <span id="lbl-info">No book loaded</span>
+        <span class="stats" id="lbl-stats">WPM: 0.0 | Accuracy: 0.0%</span>
+    </header>
 
-<div id="trainer-container" tabindex="0">
-    <span class="pending">Carga un archivo PDF para empezar a practicar tu velocidad de tipeo...</span>
-</div>
+    <div id="typing-container" tabindex="0"></div>
 
-<script>
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    <script>
+        // Frontend logic for mouse placement, 80% threshold Next button, and English messages
+        const container = document.getElementById('typing-container');
+        const btnLoad = document.getElementById('btn-load');
+        const btnNext = document.getElementById('btn-next');
+        const lblInfo = document.getElementById('lbl-info');
+        const lblStats = document.getElementById('lbl-stats');
 
-let blocks = [];
-let currentBlockIdx = 0;
-let text = "";
-let pos = 0;
-let startTime = null;
-let totalKeys = 0;
-let correctKeys = 0;
-let isFinished = false;
+        let currentText = "";
+        let currentIndex = 0;
+        let totalKeystrokes = 0;
+        let correctKeystrokes = 0;
+        let startTime = null;
+        let errorAtCursor = false;
 
-document.getElementById('pdf-upload').addEventListener('change', async function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+        btnLoad.addEventListener('click', () => {
+            alert("To load PDF files, please use the Python desktop version (main.py).");
+        });
 
-    document.getElementById('info-text').innerText = `Cargando ${file.name}...`;
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    
-    let fullText = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        fullText += content.items.map(item => item.str).join(" ") + " ";
-    }
+        btnNext.addEventListener('click', () => {
+            alert("Moving to next block...");
+        });
 
-    // Limpiar y dividir en bloques de ~100 palabras
-    fullText = fullText.replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'");
-    const words = fullText.replace(/\s+/g, ' ').trim().split(" ");
-    
-    blocks = [];
-    for (let i = 0; i < words.length; i += 100) {
-        blocks.push(words.slice(i, i + 100).join(" "));
-    }
+        // Allow clicking to move typing cursor
+        container.addEventListener('click', (e) => {
+            const range = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+            if (range && currentText) {
+                const pos = range.startOffset;
+                if (pos <= currentText.length) {
+                    currentIndex = pos;
+                    errorAtCursor = false;
+                    renderText();
+                    checkProgress();
+                }
+            }
+            container.focus();
+        });
 
-    currentBlockIdx = 0;
-    loadBlock();
-});
+        window.addEventListener('keydown', (e) => {
+            if (!currentText || currentIndex >= currentText.length) return;
+            if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
 
-function loadBlock() {
-    if (currentBlockIdx >= blocks.length) {
-        document.getElementById('info-text').innerText = "¡Felicidades! Libro completado.";
-        document.getElementById('trainer-container').innerHTML = "<span class='correct'>¡Has terminado todo el libro!</span>";
-        return;
-    }
-    text = blocks[currentBlockIdx];
-    pos = 0;
-    startTime = null;
-    totalKeys = 0;
-    correctKeys = 0;
-    isFinished = false;
-    document.getElementById('info-text').innerText = `Bloque ${currentBlockIdx + 1} / ${blocks.length}`;
-    renderText();
-    document.getElementById('trainer-container').focus();
-}
+            if (!startTime) {
+                startTime = Date.now();
+            }
 
-function renderText() {
-    let html = "";
-    for (let i = 0; i < text.length; i++) {
-        if (i < pos) {
-            html += `<span class="correct">${text[i]}</span>`;
-        } else if (i === pos) {
-            html += `<span class="current">${text[i]}</span>`;
-        } else {
-            html += `<span class="pending">${text[i]}</span>`;
+            totalKeystrokes++;
+            const expected = currentText[currentIndex];
+
+            if (e.key === expected) {
+                correctKeystrokes++;
+                errorAtCursor = false;
+                currentIndex++;
+            } else {
+                errorAtCursor = true;
+            }
+
+            renderText();
+            checkProgress();
+            updateStats();
+
+            if (currentIndex >= currentText.length) {
+                lblInfo.textContent = "Block completed!";
+            }
+        });
+
+        function renderText() {
+            let html = "";
+            for (let i = 0; i < currentText.length; i++) {
+                const char = currentText[i] === ' ' ? '&nbsp;' : currentText[i];
+                if (i < currentIndex) {
+                    html += `<span class="correct">${char}</span>`;
+                } else if (i === currentIndex) {
+                    const cls = errorAtCursor ? "error" : "current";
+                    html += `<span class="${cls}">${char}</span>`;
+                } else {
+                    html += `<span class="pending">${char}</span>`;
+                }
+            }
+            container.innerHTML = html;
         }
-    }
-    document.getElementById('trainer-container').innerHTML = html;
-}
 
-document.getElementById('trainer-container').addEventListener('keydown', function(e) {
-    if (!text || isFinished) return;
-    if (e.key.length !== 1) return; // Ignorar teclas de control
-
-    if (!startTime) startTime = new Date();
-    totalKeys++;
-
-    if (e.key === text[pos]) {
-        correctKeys++;
-        pos++;
-        if (pos >= text.length) {
-            isFinished = true;
-            currentBlockIdx++;
-            setTimeout(loadBlock, 500); // Pasar al siguiente bloque
+        function checkProgress() {
+            if (!currentText) return;
+            const progress = (currentIndex / currentText.length) * 100;
+            if (progress >= 80.0 || currentIndex >= currentText.length) {
+                btnNext.removeAttribute('disabled');
+            } else {
+                btnNext.setAttribute('disabled', 'true');
+            }
         }
-    }
 
-    renderText();
-    updateStats();
-});
+        function updateStats() {
+            if (!startTime) return;
+            const elapsedMin = (Date.now() - startTime) / 60000;
+            const wpm = elapsedMin > 0 ? (currentIndex / 5) / elapsedMin : 0.0;
+            const accuracy = totalKeystrokes > 0 ? (correctKeystrokes / totalKeystrokes) * 100 : 100.0;
+            lblStats.textContent = `WPM: ${wpm.toFixed(1)} | Accuracy: ${accuracy.toFixed(1)}%`;
+        }
 
-function updateStats() {
-    if (!startTime) return;
-    const elapsedMin = (new Date() - startTime) / 60000;
-    const wpm = elapsedMin > 0 ? (pos / 5) / elapsedMin : 0;
-    const accuracy = totalKeys > 0 ? (correctKeys / totalKeys) * 100 : 100;
-    document.getElementById('stats-display').innerText = `WPM: ${wpm.toFixed(1)} | Precisión: ${accuracy.toFixed(1)}%`;
-}
-</script>
+        // Example initial text for testing interface
+        currentText = "Welcome to the typing trainer application. Practice your speed and accuracy here.";
+        renderText();
+        container.focus();
+    </script>
 </body>
 </html>
