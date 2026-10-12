@@ -35,12 +35,46 @@ class Book:
         return len(self.blocks)
 
 # --- 2. PROCESADOR Y LIMPIADOR DE PDF ---
-def extract_pages(pdf_path: str) -> list[str]:
-    doc = pymupdf.open(pdf_path)
-    pages = [doc.load_page(i).get_text("text") for i in range(doc.page_count)]
-    doc.close()
-    return pages
 
+    # Limpieza automática de caché JSON al abrir el libro para evitar datos viejos
+    import os, glob
+    for f in glob.glob('*_progress.json') + glob.glob('data/*_progress.json') + glob.glob('*.local/share/typing_trainer/*_progress.json'):
+        try:
+            os.remove(f)
+        except:
+            pass
+
+def extract_pages(path):
+    import pypdf
+    import re
+    import os, glob
+    
+    # Limpieza automática de caché
+    for f in glob.glob('*_progress.json') + glob.glob('data/*_progress.json') + glob.glob(os.path.expanduser('~/.local/share/typing_trainer/*_progress.json')):
+        try:
+            os.remove(f)
+        except:
+            pass
+
+    text_pages = []
+    try:
+        reader = pypdf.PdfReader(path)
+        for page in reader.pages:
+            try:
+                txt = page.extract_text()
+                if txt:
+                    cleaned = re.sub(r'[^a-zA-Z0-9\s.,!?\'\"-]', ' ', txt)
+                    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                    if len(cleaned) > 15:
+                        text_pages.append(cleaned)
+            except:
+                continue
+    except Exception as e:
+        print(f"Error leyendo PDF: {e}")
+    
+    if not text_pages:
+        text_pages = ["No se pudo extraer texto legible del PDF."]
+    return text_pages
 def guess_title(pdf_path: str) -> str:
     return os.path.splitext(os.path.basename(pdf_path))[0]
 
